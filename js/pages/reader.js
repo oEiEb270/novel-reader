@@ -1,5 +1,5 @@
 // ===== 阅读器页 =====
-import { fetchChapter, fetchNovelDetail } from '../api.js';
+import { fetchChapter, fetchNovelDetail, prefetchChapters } from '../api.js';
 import { getFontSize, saveFontSize, getTheme, saveTheme, applyTheme,
          saveReadingProgress, addReadingHistory } from '../store.js';
 import { addReadChapter, isChapterRead } from '../utils.js';
@@ -72,6 +72,14 @@ export async function renderReader(novelId, chapterNum) {
     initToolbarEvents(savedFontSize, theme);
     bindReaderEvents(novelId, chapterNum, novel.totalChapters);
     initScrollProgress();
+
+    // 后台预加载相邻章节（不阻塞当前页面）
+    const toPreload = [];
+    if (chapterNum > 1) toPreload.push(chapterNum - 1);
+    if (chapterNum < novel.totalChapters) toPreload.push(chapterNum + 1);
+    if (toPreload.length > 0) {
+      prefetchChapters(novelId, toPreload);
+    }
   } catch (err) {
     console.error('阅读器加载失败:', err);
     main.innerHTML = `<div class="empty-state"><span class="icon">⚠️</span><p>章节加载失败</p><a href="#/novel/${novelId}">返回详情页</a></div>`;
