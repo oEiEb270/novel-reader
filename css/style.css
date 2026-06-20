@@ -284,9 +284,19 @@ input {
     padding-bottom: 70px; /* 为底部导航留空间 */
   }
 
+  /* 阅读器页面不需要底部导航占位 */
+  #main-content.reader-page {
+    padding-bottom: 0;
+  }
+
   .bottom-nav {
     display: flex;
     justify-content: space-around;
+  }
+
+  /* 阅读器页面隐藏底部导航 */
+  body:has(#main-content.reader-page) .bottom-nav {
+    display: none !important;
   }
 }
 

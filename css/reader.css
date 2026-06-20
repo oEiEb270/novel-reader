@@ -232,7 +232,7 @@
 /* 底部阅读进度条 */
 .reader-progress-bar {
   position: fixed;
-  bottom: 0;
+  top: 0;
   left: 0;
   height: 3px;
   background: var(--accent);
@@ -242,21 +242,52 @@
 
 /* 响应式 — 阅读器 */
 @media (max-width: 768px) {
+  #main-content.reader-page {
+    padding: 0;
+  }
+
   .reader-content {
     padding: 20px 16px;
+    padding-bottom: 80px; /* 为底部吸附的章节导航留空间 */
     border-radius: 0;
   }
 
   .reader-toolbar {
     border-radius: 0;
     padding: 10px 12px;
+    position: sticky;
+    top: 56px; /* 顶部导航栏下方 */
+    z-index: 50;
+    margin-bottom: 0;
+  }
+
+  /* 章节导航吸附在屏幕底部，方便随时点击 */
+  .chapter-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-primary);
+    padding: 10px 16px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    margin: 0;
+    gap: 16px;
+    z-index: 100;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.1);
+  }
+
+  .chapter-nav .nav-btn {
+    padding: 14px;
+    font-size: 15px;
+    border-radius: 12px;
   }
 
   .catalog-sidebar {
     width: 280px;
   }
 
-  .reader-page {
-    padding: 0;
+  /* 阅读进度条移到顶部导航栏下方 */
+  .reader-progress-bar {
+    top: 56px;
   }
 }
