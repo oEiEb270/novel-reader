@@ -119,25 +119,22 @@ export async function fetchNovelDetail(id) {
     const communityNovel = (communityNovels || []).find(n => (n.id || ('community_' + n.title)) === id);
     if (!communityNovel) throw new Error('小说不存在');
 
-    // 从 community/{id}.json 获取章节
-    let chapterList = [];
-    try {
-      const resp = await fetch(`community/${id}.json`);
-      if (resp.ok) {
-        const chapters = await resp.json();
-        chapterList = chapters.map((c, i) => ({
-          novelId: id,
-          chapterNum: c.chapterNum || i + 1,
-          title: c.title || `第${i + 1}章`,
-          wordCount: c.content ? c.content.replace(/<[^>]+>/g, '').length : 0,
-        }));
-      }
-    } catch { /* ignore */ }
+    // 动态生成章节目录（不下载章节文件，秒开）
+    const total = communityNovel.totalChapters || 0;
+    const chapterList = [];
+    for (let i = 1; i <= total; i++) {
+      chapterList.push({
+        novelId: id,
+        chapterNum: i,
+        title: `第${i}章`,
+        wordCount: 0,
+      });
+    }
 
     return {
       ...communityNovel,
       id,
-      totalChapters: chapterList.length || communityNovel.totalChapters || 0,
+      totalChapters: total,
       chapterList,
       isCommunity: true,
     };
@@ -193,13 +190,18 @@ export async function fetchNovelDetail(id) {
 export async function fetchChapter(novelId, chapterNum) {
   await delay(250);
 
-  // 社区小说章节
+  // 社区小说章节 — 只加载对应分片（每100章一个文件）
   if (novelId.startsWith('community_')) {
     const communityNovel = (communityNovels || []).find(n => (n.id || ('community_' + n.title)) === novelId);
     if (!communityNovel) throw new Error('小说不存在');
 
+    // 计算章节所属分片
+    const chunkStart = Math.floor((chapterNum - 1) / 100) * 100 + 1;
+    const chunkEnd = Math.min(chunkStart + 99, communityNovel.totalChapters || 9999);
+    const chunkFile = `community/${novelId}_${chunkStart}_${chunkEnd}.json`;
+
     try {
-      const resp = await fetch(`community/${novelId}.json`);
+      const resp = await fetch(chunkFile);
       if (resp.ok) {
         const chapters = await resp.json();
         const chapter = chapters.find(c => (c.chapterNum || 0) === chapterNum);
@@ -211,7 +213,7 @@ export async function fetchChapter(novelId, chapterNum) {
             content: chapter.content || '<p>暂无内容</p>',
             wordCount: chapter.content ? chapter.content.replace(/<[^>]+>/g, '').length : 0,
             novelTitle: communityNovel.title,
-            totalChapters: chapters.length,
+            totalChapters: communityNovel.totalChapters || chapters.length,
           };
         }
       }
