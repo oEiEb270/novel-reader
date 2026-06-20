@@ -31,6 +31,7 @@ export async function renderImport() {
         <button class="category-tab" data-tab="text">📋 粘贴文本</button>
         <button class="category-tab" data-tab="manual">✍️ 手动录入</button>
         <button class="category-tab" data-tab="manage">📦 管理已导入</button>
+        <button class="category-tab" data-tab="share">🔗 从链接导入</button>
         <button class="category-tab" data-tab="backup">💾 备份/还原</button>
       </div>
 
@@ -168,6 +169,23 @@ export async function renderImport() {
         ${renderManagePanel(importedNovels)}
       </div>
 
+      <!-- 从链接导入 -->
+      <div id="tab-share" class="import-tab" style="display:none;">
+        <div class="card">
+          <h3 style="margin-bottom:8px;">🔗 从分享链接导入</h3>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+            粘贴别人分享的小说链接，直接导入到你的书架。
+          </p>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="share-url-input" placeholder="粘贴分享链接..."
+              style="flex:1;padding:10px 14px;border-radius:8px;background:var(--input-bg);
+                color:var(--text-primary);border:1px solid var(--border);font-size:14px;">
+            <button class="btn btn-primary" id="import-share-btn">导入</button>
+          </div>
+          <div id="share-import-status" style="margin-top:12px;font-size:13px;"></div>
+        </div>
+      </div>
+
       <!-- 备份还原 -->
       <div id="tab-backup" class="import-tab" style="display:none;">
         <div class="card">
@@ -297,6 +315,8 @@ function renderManagePanel(novels) {
                 style="padding:6px 12px;font-size:12px;white-space:nowrap;">
                 ${isOffline ? '🔄 重新上架' : '⬇ 下架'}
               </button>
+              <button class="btn btn-outline share-novel-btn" data-id="${n.id}"
+                style="padding:6px 12px;font-size:12px;">🔗 分享</button>
               <button class="btn btn-outline edit-imported-btn" data-id="${n.id}"
                 style="padding:6px 12px;font-size:12px;">追加章节</button>
               <button class="remove-bookmark-btn delete-imported-btn" data-id="${n.id}"
@@ -395,6 +415,20 @@ function bindImportEvents() {
         renderImport();
       }
     });
+  });
+
+  // ---- 分享按钮 ----
+  document.querySelectorAll('.share-novel-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      shareNovel(btn.dataset.id);
+    });
+  });
+
+  // ---- 从链接导入 ----
+  document.getElementById('import-share-btn').addEventListener('click', importFromShareUrl);
+  document.getElementById('share-url-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') importFromShareUrl();
   });
 
   // ---- 元数据弹窗 ----
@@ -1167,6 +1201,143 @@ function showAppendChapterUI(novelId) {
       }
     });
   }, 100);
+}
+
+// ===== 分享功能 =====
+
+/**
+ * 分享小说：上传到免费 JSON 托管，生成分享链接
+ */
+async function shareNovel(novelId) {
+  const novel = getImportedNovels().find(n => n.id === novelId);
+  if (!novel) return;
+
+  const chapters = await getImportedChapters(novelId);
+  if (chapters.length === 0) {
+    showToast('没有可分享的章节');
+    return;
+  }
+
+  const shareData = {
+    title: novel.title,
+    author: novel.author || '佚名',
+    category: novel.category,
+    intro: novel.intro || '',
+    chapters: chapters.map(c => ({
+      chapterNum: c.chapterNum,
+      title: c.title,
+      content: c.content,
+    })),
+    sharedAt: new Date().toISOString(),
+  };
+
+  // 显示加载状态
+  showToast('⏳ 正在生成分享链接...');
+
+  try {
+    // 上传到 jsonblob.com
+    const resp = await fetch('https://jsonblob.com/api/jsonBlob', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(shareData),
+    });
+
+    if (!resp.ok) throw new Error('上传失败');
+
+    // 获取 blob ID
+    const location = resp.headers.get('Location');
+    // Location 格式: https://jsonblob.com/api/jsonBlob/xxxxx
+    const blobId = location.split('/').pop();
+
+    const shareUrl = `https://oeieb270.github.io/novel-reader/#/import?share=${blobId}`;
+
+    // 复制到剪贴板
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast('✅ 分享链接已复制到剪贴板！');
+    } catch {
+      // 降级：显示链接
+      showToast('✅ 链接已生成');
+    }
+
+    // 同时显示在页面上
+    const statusEl = document.getElementById('share-import-status');
+    if (statusEl) {
+      statusEl.innerHTML = `
+        <div style="background:#e8f5e9;border:1px solid #27ae60;border-radius:8px;padding:12px;margin-top:8px;">
+          <b style="color:#27ae60;">✅ 分享链接已生成并复制：</b><br>
+          <input type="text" value="${shareUrl}" readonly
+            style="width:100%;padding:8px;margin-top:6px;border-radius:4px;border:1px solid #ddd;font-size:12px;"
+            onclick="this.select();document.execCommand('copy')">
+          <br><small style="color:#666;">任何人打开此链接即可导入《${novel.title}》</small>
+        </div>`;
+    }
+  } catch (err) {
+    console.error('分享失败:', err);
+    // 降级方案：生成本地备份文件
+    showToast('❌ 云端上传失败，请用💾备份导出后分享文件');
+  }
+}
+
+/**
+ * 从分享链接导入
+ */
+async function importFromShareUrl() {
+  const input = document.getElementById('share-url-input');
+  const statusEl = document.getElementById('share-import-status');
+  const url = input.value.trim();
+
+  if (!url) {
+    statusEl.innerHTML = '<span style="color:var(--accent);">请粘贴分享链接</span>';
+    return;
+  }
+
+  // 从 URL 中提取 blob ID
+  // 支持格式: ...?share=xxxxx 或直接的 jsonblob URL
+  let blobId;
+  const shareMatch = url.match(/[?&]share=([^&]+)/);
+  if (shareMatch) {
+    blobId = shareMatch[1];
+  } else {
+    const blobMatch = url.match(/jsonblob\.com\/api\/jsonBlob\/([^/?]+)/);
+    if (blobMatch) blobId = blobMatch[1];
+  }
+
+  if (!blobId) {
+    statusEl.innerHTML = '<span style="color:var(--accent);">❌ 无效的分享链接</span>';
+    return;
+  }
+
+  statusEl.innerHTML = '<span style="color:var(--text-secondary);">⏳ 正在获取小说数据...</span>';
+
+  try {
+    const resp = await fetch(`https://jsonblob.com/api/jsonBlob/${blobId}`);
+    if (!resp.ok) throw new Error('获取失败');
+    const data = await resp.json();
+
+    if (!data.title || !data.chapters) {
+      throw new Error('数据格式错误');
+    }
+
+    // 展示元数据确认弹窗
+    const chapters = data.chapters.map(c => ({
+      chapterNum: c.chapterNum,
+      title: c.title,
+      content: c.content,
+    }));
+
+    showMetadataModal(chapters, {
+      title: data.title,
+      author: data.author || '',
+      category: data.category || 'fantasy',
+      intro: data.intro || '',
+    });
+
+    statusEl.innerHTML = '<span style="color:#27ae60;">✅ 数据获取成功！请确认小说信息后保存。</span>';
+  } catch (err) {
+    console.error('导入失败:', err);
+    statusEl.innerHTML = `<span style="color:var(--accent);">❌ 导入失败：分享链接可能已过期，请让对方重新分享</span>`;
+  }
 }
 
 // ===== 备份还原 =====
