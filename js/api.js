@@ -6,18 +6,21 @@ import { getImportedNovels, getPublishedImportedNovels, getImportedChapters } fr
 
 let novelsData = null;
 let chaptersData = null;
+let communityNovels = null;
 
 /**
- * 加载本地数据
+ * 加载本地数据 + 社区小说
  */
 async function loadData() {
   if (!novelsData) {
-    const [novelsRes, chaptersRes] = await Promise.all([
-      fetch('data/novels.json'),
-      fetch('data/chapters.json'),
+    const [novelsRes, chaptersRes, communityRes] = await Promise.all([
+      fetch('data/novels.json').then(r => r.json()).catch(() => []),
+      fetch('data/chapters.json').then(r => r.json()).catch(() => ({})),
+      fetch('community/index.json').then(r => r.json()).catch(() => []),
     ]);
-    novelsData = await novelsRes.json();
-    chaptersData = await chaptersRes.json();
+    novelsData = novelsRes;
+    chaptersData = chaptersRes;
+    communityNovels = communityRes;
   }
 }
 
@@ -32,13 +35,21 @@ function delay(ms) {
  * 合并内置小说和导入的小说
  */
 function mergeNovels(builtIn) {
-  // 只合并已发布的导入小说
+  // 本地导入的已发布小说
   const imported = getPublishedImportedNovels().map(n => ({
     ...n,
     isImported: true,
   }));
-  // 导入的在前（最新添加的优先显示）
-  return [...imported, ...builtIn];
+  // 社区小说（从 GitHub 仓库加载）
+  const community = (communityNovels || []).map(n => ({
+    ...n,
+    id: n.id || ('community_' + n.title),
+    cover: n.cover || '',
+    isCommunity: true,
+    source: 'community',
+  }));
+  // 社区小说优先，然后本地导入，然后内置
+  return [...community, ...imported, ...builtIn];
 }
 
 /**
@@ -103,6 +114,35 @@ export async function searchNovels(query, page = 1, pageSize = 20) {
 export async function fetchNovelDetail(id) {
   await delay(200);
 
+  // 先检查是否是社区小说
+  if (id.startsWith('community_')) {
+    const communityNovel = (communityNovels || []).find(n => (n.id || ('community_' + n.title)) === id);
+    if (!communityNovel) throw new Error('小说不存在');
+
+    // 从 community/{id}.json 获取章节
+    let chapterList = [];
+    try {
+      const resp = await fetch(`community/${id}.json`);
+      if (resp.ok) {
+        const chapters = await resp.json();
+        chapterList = chapters.map((c, i) => ({
+          novelId: id,
+          chapterNum: c.chapterNum || i + 1,
+          title: c.title || `第${i + 1}章`,
+          wordCount: c.content ? c.content.replace(/<[^>]+>/g, '').length : 0,
+        }));
+      }
+    } catch { /* ignore */ }
+
+    return {
+      ...communityNovel,
+      id,
+      totalChapters: chapterList.length || communityNovel.totalChapters || 0,
+      chapterList,
+      isCommunity: true,
+    };
+  }
+
   // 先检查是否是导入的小说（包括已下架的）
   if (id.startsWith('import_')) {
     const imported = getImportedNovels().find(n => n.id === id);
@@ -152,6 +192,32 @@ export async function fetchNovelDetail(id) {
  */
 export async function fetchChapter(novelId, chapterNum) {
   await delay(250);
+
+  // 社区小说章节
+  if (novelId.startsWith('community_')) {
+    const communityNovel = (communityNovels || []).find(n => (n.id || ('community_' + n.title)) === novelId);
+    if (!communityNovel) throw new Error('小说不存在');
+
+    try {
+      const resp = await fetch(`community/${novelId}.json`);
+      if (resp.ok) {
+        const chapters = await resp.json();
+        const chapter = chapters.find(c => (c.chapterNum || 0) === chapterNum);
+        if (chapter) {
+          return {
+            novelId,
+            chapterNum,
+            title: chapter.title || `第${chapterNum}章`,
+            content: chapter.content || '<p>暂无内容</p>',
+            wordCount: chapter.content ? chapter.content.replace(/<[^>]+>/g, '').length : 0,
+            novelTitle: communityNovel.title,
+            totalChapters: chapters.length,
+          };
+        }
+      }
+    } catch { /* ignore */ }
+    throw new Error('章节不存在');
+  }
 
   // 导入的小说章节
   if (novelId.startsWith('import_')) {

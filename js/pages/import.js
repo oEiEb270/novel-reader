@@ -1,7 +1,7 @@
 // ===== 小说导入页 =====
 import { addImportedNovel, saveImportedChapters, getImportedChapters,
-         removeImportedNovel, getImportedNovels, getPublishedImportedNovels,
-         exportImportedAll, importFromBackup,
+         removeImportedNovel, getImportedNovels, saveImportedNovels,
+         getPublishedImportedNovels, exportImportedAll, importFromBackup,
          unpublishNovel, publishNovel, appendImportedChapters } from '../store.js';
 import { showToast } from '../utils.js';
 import { getCategoryName } from '../utils.js';
@@ -317,6 +317,10 @@ function renderManagePanel(novels) {
               </button>
               <button class="btn btn-outline share-novel-btn" data-id="${n.id}"
                 style="padding:6px 12px;font-size:12px;">🔗 分享</button>
+              <button class="btn btn-outline publish-novel-btn" data-id="${n.id}"
+                style="padding:6px 12px;font-size:12px;${n.isPublished ? 'background:#27ae60;color:#fff;' : ''}">
+                ${n.isPublished ? '✅ 已发布' : '🌐 发布到社区'}
+              </button>
               <button class="btn btn-outline edit-imported-btn" data-id="${n.id}"
                 style="padding:6px 12px;font-size:12px;">追加章节</button>
               <button class="remove-bookmark-btn delete-imported-btn" data-id="${n.id}"
@@ -422,6 +426,14 @@ function bindImportEvents() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       shareNovel(btn.dataset.id);
+    });
+  });
+
+  // ---- 发布到社区按钮 ----
+  document.querySelectorAll('.publish-novel-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      publishToCommunity(btn.dataset.id);
     });
   });
 
@@ -1201,6 +1213,81 @@ function showAppendChapterUI(novelId) {
       }
     });
   }, 100);
+}
+
+// ===== 发布到社区 =====
+
+async function publishToCommunity(novelId) {
+  const novel = getImportedNovels().find(n => n.id === novelId);
+  if (!novel) return;
+
+  const chapters = await getImportedChapters(novelId);
+  if (chapters.length === 0) {
+    showToast('没有可发布的章节');
+    return;
+  }
+
+  // 构建社区小说数据
+  const communityNovel = {
+    id: 'community_' + novelId.replace('import_', ''),
+    title: novel.title,
+    author: novel.author || '佚名',
+    category: novel.category,
+    intro: novel.intro || '',
+    cover: novel.cover || '',
+    totalChapters: chapters.length,
+    status: novel.status || 'ongoing',
+    tags: novel.tags || [],
+    publishedAt: new Date().toISOString(),
+  };
+
+  const chaptersData = chapters.map(c => ({
+    chapterNum: c.chapterNum,
+    title: c.title,
+    content: c.content,
+  }));
+
+  // 下载元数据
+  downloadJSON('community_' + novelId.replace('import_', '') + '.json', chaptersData);
+
+  // 标记为待发布
+  const novels = getImportedNovels();
+  const idx = novels.findIndex(n => n.id === novelId);
+  if (idx >= 0) {
+    novels[idx].isPublished = true;
+    novels[idx].publishedId = communityNovel.id;
+    novels[idx].publishedMeta = communityNovel;
+    saveImportedNovels(novels);
+  }
+
+  showToast('📥 章节文件已下载。请将文件保存到 novel-reader/community/ 目录下');
+
+  // 同时在页面显示发布信息
+  const statusEl = document.getElementById('share-import-status');
+  if (statusEl) {
+    statusEl.innerHTML = `
+      <div style="background:#e8f5e9;border:1px solid #27ae60;border-radius:8px;padding:16px;margin-top:8px;">
+        <b style="color:#27ae60;">✅ 《${novel.title}》发布数据已准备</b><br><br>
+        <b>发布步骤：</b><br>
+        1. 将下载的章节文件放入 <code>novel-reader/community/</code> 目录<br>
+        2. 在此聊天中发送 <b>"提交发布"</b>，我将自动更新索引并推送<br><br>
+        <small style="color:#666;">发布后，所有访问者都能在网站上看到《${novel.title}》</small>
+      </div>`;
+  }
+
+  renderImport();
+}
+
+function downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ===== 分享功能 =====
