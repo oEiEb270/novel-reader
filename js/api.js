@@ -116,6 +116,7 @@ export async function fetchNovelDetail(id) {
 
   // 先检查是否是社区小说
   if (id.startsWith('community_')) {
+    await loadData();
     const communityNovel = (communityNovels || []).find(n => (n.id || ('community_' + n.title)) === id);
     if (!communityNovel) throw new Error('小说不存在');
 
@@ -192,6 +193,7 @@ export async function fetchChapter(novelId, chapterNum) {
 
   // 社区小说章节 — 只加载对应分片（每100章一个文件）
   if (novelId.startsWith('community_')) {
+    await loadData();
     const communityNovel = (communityNovels || []).find(n => (n.id || ('community_' + n.title)) === novelId);
     if (!communityNovel) throw new Error('小说不存在');
 
