@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "id": "community_1781941186864",
+    "title": "惊悚乐园",
+    "author": "三天两觉",
+    "category": "fantasy",
+    "intro": "欢迎来到惊悚乐园。这不仅是游戏，也是挑战和试炼。恐惧是人类的本能，而恐惧中诞生的力量，将改变一切。",
+    "cover": "",
+    "totalChapters": 1495,
+    "status": "completed",
+    "tags": [
+      "游戏",
+      "惊悚",
+      "无限流"
+    ],
+    "publishedAt": "2026-06-20T07:47:03.469Z"
+  }
+]
